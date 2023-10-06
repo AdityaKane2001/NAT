@@ -1,7 +1,7 @@
 # Training artifacts
 
-outfiles/
 wandb/
+outfiles/
 output/
 
 # Byte-compiled / optimized / DLL files
