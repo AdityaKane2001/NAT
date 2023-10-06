@@ -1,8 +1,8 @@
 # Training artifacts
 
-**/outfiles/**
-**/wandb/**
-**/output/**
+outfiles/
+wandb/
+output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
