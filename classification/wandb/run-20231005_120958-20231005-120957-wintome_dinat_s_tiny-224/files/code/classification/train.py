@@ -544,7 +544,7 @@ def main(args):
     # print(labels)
     # raise ValueError()
     # setup learning rate schedule and starting epoch
-    # print(model)
+    print(model)
     lr_scheduler, num_epochs = create_scheduler(args, optimizer, len(dataset_train))
     start_epoch = 0
     if args.start_epoch is not None:

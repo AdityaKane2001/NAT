@@ -1,0 +1,164 @@
+NAT(
+  (patch_embed): ConvTokenizer(
+    (proj): Sequential(
+      (0): Conv2d(3, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+      (1): Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+    )
+    (norm): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+  )
+  (pos_drop): Dropout(p=0.0, inplace=False)
+  (levels): ModuleList(
+    (0): NATBlock(
+      (blocks): ModuleList(
+        (0): NATLayer(
+          (norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (attn): NeighborhoodAttention2D(
+            kernel_size=7, dilation=1, head_dim=32, num_heads=4
+            (qkv): Linear(in_features=128, out_features=384, bias=True)
+            (attn_drop): Dropout(p=0.0, inplace=False)
+            (proj): Linear(in_features=128, out_features=128, bias=True)
+            (proj_drop): Dropout(p=0.0, inplace=False)
+          )
+          (drop_path): Identity()
+          (norm2): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (mlp): Mlp(
+            (fc1): Linear(in_features=128, out_features=256, bias=True)
+            (act): GELU(approximate='none')
+            (fc2): Linear(in_features=256, out_features=128, bias=True)
+            (drop): Dropout(p=0.0, inplace=False)
+          )
+        )
+        (1-2): 2 x NATLayer(
+          (norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (attn): NeighborhoodAttention2D(
+            kernel_size=7, dilation=1, head_dim=32, num_heads=4
+            (qkv): Linear(in_features=128, out_features=384, bias=True)
+            (attn_drop): Dropout(p=0.0, inplace=False)
+            (proj): Linear(in_features=128, out_features=128, bias=True)
+            (proj_drop): Dropout(p=0.0, inplace=False)
+          )
+          (drop_path): DropPath()
+          (norm2): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (mlp): Mlp(
+            (fc1): Linear(in_features=128, out_features=256, bias=True)
+            (act): GELU(approximate='none')
+            (fc2): Linear(in_features=256, out_features=128, bias=True)
+            (drop): Dropout(p=0.0, inplace=False)
+          )
+        )
+      )
+      (downsample): ConvDownsampler(
+        (reduction): Conv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        (norm): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+      )
+    )
+    (1): NATBlock(
+      (blocks): ModuleList(
+        (0-3): 4 x NATLayer(
+          (norm1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+          (attn): NeighborhoodAttention2D(
+            kernel_size=7, dilation=1, head_dim=32, num_heads=8
+            (qkv): Linear(in_features=256, out_features=768, bias=True)
+            (attn_drop): Dropout(p=0.0, inplace=False)
+            (proj): Linear(in_features=256, out_features=256, bias=True)
+            (proj_drop): Dropout(p=0.0, inplace=False)
+          )
+          (drop_path): DropPath()
+          (norm2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+          (mlp): Mlp(
+            (fc1): Linear(in_features=256, out_features=512, bias=True)
+            (act): GELU(approximate='none')
+            (fc2): Linear(in_features=512, out_features=256, bias=True)
+            (drop): Dropout(p=0.0, inplace=False)
+          )
+        )
+      )
+      (downsample): ConvDownsampler(
+        (reduction): Conv2d(256, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        (norm): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+      )
+    )
+    (2): NATBlock(
+      (blocks): ModuleList(
+        (0-17): 18 x NATLayer(
+          (norm1): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+          (attn): NeighborhoodAttention2D(
+            kernel_size=7, dilation=1, head_dim=32, num_heads=16
+            (qkv): Linear(in_features=512, out_features=1536, bias=True)
+            (attn_drop): Dropout(p=0.0, inplace=False)
+            (proj): Linear(in_features=512, out_features=512, bias=True)
+            (proj_drop): Dropout(p=0.0, inplace=False)
+          )
+          (drop_path): DropPath()
+          (norm2): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+          (mlp): Mlp(
+            (fc1): Linear(in_features=512, out_features=1024, bias=True)
+            (act): GELU(approximate='none')
+            (fc2): Linear(in_features=1024, out_features=512, bias=True)
+            (drop): Dropout(p=0.0, inplace=False)
+          )
+        )
+      )
+      (downsample): ConvDownsampler(
+        (reduction): Conv2d(512, 1024, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        (norm): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+      )
+    )
+    (3): NATBlock(
+      (blocks): ModuleList(
+        (0-4): 5 x NATLayer(
+          (norm1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (attn): NeighborhoodAttention2D(
+            kernel_size=7, dilation=1, head_dim=32, num_heads=32
+            (qkv): Linear(in_features=1024, out_features=3072, bias=True)
+            (attn_drop): Dropout(p=0.0, inplace=False)
+            (proj): Linear(in_features=1024, out_features=1024, bias=True)
+            (proj_drop): Dropout(p=0.0, inplace=False)
+          )
+          (drop_path): DropPath()
+          (norm2): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          (mlp): Mlp(
+            (fc1): Linear(in_features=1024, out_features=2048, bias=True)
+            (act): GELU(approximate='none')
+            (fc2): Linear(in_features=2048, out_features=1024, bias=True)
+            (drop): Dropout(p=0.0, inplace=False)
+          )
+        )
+      )
+    )
+  )
+  (norm): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+  (avgpool): AdaptiveAvgPool1d(output_size=1)
+  (head): Linear(in_features=1024, out_features=1000, bias=True)
+)
+==========================================================================================
+Layer (type:depth-idx)                   Output Shape              Param #
+==========================================================================================
+├─ConvTokenizer: 1-1                     [-1, 56, 56, 128]         --
+|    └─Sequential: 2-1                   [-1, 128, 56, 56]         --
+|    |    └─Conv2d: 3-1                  [-1, 64, 112, 112]        1,792
+|    |    └─Conv2d: 3-2                  [-1, 128, 56, 56]         73,856
+|    └─LayerNorm: 2-2                    [-1, 56, 56, 128]         256
+├─Dropout: 1-2                           [-1, 56, 56, 128]         --
+├─ModuleList: 1                          []                        --
+|    └─NATBlock: 2-3                     [-1, 28, 28, 256]         --
+|    |    └─ConvDownsampler: 3-3         [-1, 28, 28, 256]         295,424
+|    └─NATBlock: 2-4                     [-1, 14, 14, 512]         --
+|    |    └─ConvDownsampler: 3-4         [-1, 14, 14, 512]         1,180,672
+|    └─NATBlock: 2-5                     [-1, 7, 7, 1024]          --
+|    |    └─ConvDownsampler: 3-5         [-1, 7, 7, 1024]          4,720,640
+|    └─NATBlock: 2-6                     [-1, 7, 7, 1024]          --
+├─LayerNorm: 1-3                         [-1, 7, 7, 1024]          2,048
+├─AdaptiveAvgPool1d: 1-4                 [-1, 1024, 1]             --
+├─Linear: 1-5                            [-1, 1000]                1,025,000
+==========================================================================================
+Total params: 7,299,688
+Trainable params: 7,299,688
+Non-trainable params: 0
+Total mult-adds (G): 1.12
+==========================================================================================
+Input size (MB): 0.57
+Forward/backward pass size (MB): 18.00
+Params size (MB): 27.85
+Estimated Total Size (MB): 46.42
+==========================================================================================

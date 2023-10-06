@@ -323,7 +323,7 @@ def get_args_parser(parents=[], read_config=False):
                         help='Best metric (default: "top1"')
     parser.add_argument('--tta', type=int, default=0, metavar='N',
                         help='Test/inference time augmentation (oversampling) factor. 0=None (default: 0)')
-    parser.add_argument("--local-rank", default=2, type=int)
+    parser.add_argument("--local-rank", default=0, type=int)
     parser.add_argument('--use-multi-epochs-loader', action='store_true', default=False,
                         help='use the multi-epochs-loader to save time at the beginning of every epoch')
     parser.add_argument('--torchscript', dest='torchscript', action='store_true',
@@ -532,19 +532,12 @@ def main(args):
             class_map=args.class_map,
             download=args.dataset_download,
             batch_size=args.batch_size)
-    # from collections import defaultdict
-    # labels = defaultdict(lambda: 0)
-    # for _, label in dataset_train:
-    #     labels[label] += 1
-    # print(labels)
-    
-    # labels = defaultdict(lambda: 0)
+    # labels = list()
     # for _, label in dataset_eval:
-    #     labels[label] += 1
-    # print(labels)
+    #     labels.append(label)
+    # print(set(labels))
     # raise ValueError()
     # setup learning rate schedule and starting epoch
-    # print(model)
     lr_scheduler, num_epochs = create_scheduler(args, optimizer, len(dataset_train))
     start_epoch = 0
     if args.start_epoch is not None:

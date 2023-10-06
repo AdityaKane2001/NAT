@@ -1,0 +1,16 @@
+model: wintome_dinat_s_tiny
+lr: 1e-4
+warmup_lr: 1e-6
+min_lr: 5e-6
+epochs: 300
+cooldown_epochs: 10
+warmup_epochs: 20
+amp: True
+batch_size: 128
+sched: cosine
+sched_epochwise: False
+weight_decay: 5e-6
+num_classes: 10
+log_wandb: True
+project: wintome-dinat-s-imagenette
+output: /workspace/akane/runs

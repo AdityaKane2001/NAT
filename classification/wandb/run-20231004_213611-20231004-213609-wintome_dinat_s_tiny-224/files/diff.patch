@@ -1,0 +1,66 @@
+diff --git a/classification/configs/nat_base.yml b/classification/configs/nat_base.yml
+index cc4423a..cedc60a 100644
+--- a/classification/configs/nat_base.yml
++++ b/classification/configs/nat_base.yml
+@@ -1,8 +1,8 @@
+ model: nat_base
+ lr: 1e-3
+ warmup_lr: 1e-6
+-min_lr: 5e-6
+-epochs: 300
++min_lr: 5e6
++epochs: 300-
+ cooldown_epochs: 10
+ warmup_epochs: 20
+ amp: True
+diff --git a/classification/train.py b/classification/train.py
+index 0be5872..4edc731 100644
+--- a/classification/train.py
++++ b/classification/train.py
+@@ -43,6 +43,8 @@ from timm.scheduler import *
+ from timm.utils import ApexScaler, NativeScaler
+ 
+ from nat import *
++from wintome_nat import *
++from wintome_dinats import *
+ from dinat import *
+ from dinats import *
+ from isotropic import *
+@@ -321,7 +323,7 @@ def get_args_parser(parents=[], read_config=False):
+                         help='Best metric (default: "top1"')
+     parser.add_argument('--tta', type=int, default=0, metavar='N',
+                         help='Test/inference time augmentation (oversampling) factor. 0=None (default: 0)')
+-    parser.add_argument("--local_rank", default=0, type=int)
++    parser.add_argument("--local-rank", default=0, type=int)
+     parser.add_argument('--use-multi-epochs-loader', action='store_true', default=False,
+                         help='use the multi-epochs-loader to save time at the beginning of every epoch')
+     parser.add_argument('--torchscript', dest='torchscript', action='store_true',
+@@ -514,12 +516,15 @@ def main(args):
+         # NOTE: EMA model does not need to be wrapped by DDP
+ 
+     # create the train and eval datasets
++    # print(args.class_map)
+     dataset_train = create_dataset(
+         args.dataset, root=args.data_dir, split=args.train_split, is_training=True,
+         class_map=args.class_map,
+         download=args.dataset_download,
+         batch_size=args.batch_size,
+         repeats=args.epoch_repeats)
++    # print(dir(dataset_train))
++    
+     dataset_eval = None
+     if not args.disable_eval:
+         dataset_eval = create_dataset(
+@@ -527,7 +532,11 @@ def main(args):
+             class_map=args.class_map,
+             download=args.dataset_download,
+             batch_size=args.batch_size)
+-
++    # labels = list()
++    # for _, label in dataset_eval:
++    #     labels.append(label)
++    # print(set(labels))
++    # raise ValueError()
+     # setup learning rate schedule and starting epoch
+     lr_scheduler, num_epochs = create_scheduler(args, optimizer, len(dataset_train))
+     start_epoch = 0
