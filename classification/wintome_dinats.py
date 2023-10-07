@@ -166,7 +166,6 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         )
         q, k, v = qkv[0], qkv[1], qkv[2]
         q = q * self.scale
-
         attn = natten2dqkrpb(q, k, self.rpb, self.kernel_size, self.dilation)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
@@ -176,6 +175,8 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
             x = x[:, :Hp, :Wp, :]
 
         if return_keys:
+            if pad_r or pad_b:
+                k = k[..., :Hp, :Wp, :]
             return self.proj_drop(self.proj(x)), k
         return self.proj_drop(self.proj(x))
 
@@ -187,80 +188,7 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         )
 
 
-class WinToMeNATReductionLayer(nn.Module):
-    def __init__(
-        self,
-        dim,
-        num_heads,
-        kernel_size=7,
-        reduction_window_size=4,
-        dilation=1,
-        mlp_ratio=4.0,
-        qkv_bias=True,
-        qk_scale=None,
-        drop=0.0,
-        attn_drop=0.0,
-        drop_path=0.0,
-        act_layer=nn.GELU,
-        norm_layer=nn.LayerNorm,
-        **kwargs,
-    ):
-        super().__init__()
-        self.dim = dim
-        self.reduction_window_size = reduction_window_size
-        self.num_heads = num_heads
-        self.mlp_ratio = mlp_ratio
-
-        self.norm1 = norm_layer(dim)
-        self.attn = WinToMeNeighborhoodAttention2D(
-            dim,
-            kernel_size=kernel_size,
-            dilation=dilation,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-        )
-
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(
-            in_features=dim,
-            out_features=dim * 2,
-            hidden_features=mlp_hidden_dim,
-            act_layer=act_layer,
-            drop=drop,
-        )
-
-    def forward(self, x):
-        B, H, W, C = x.shape
-        shortcut = x
-        x = self.norm1(x)
-        x, k = self.attn(x, return_keys=True)
-        x = shortcut + self.drop_path(x)
-
-        windowed_x = window_partition(x, window_size=self.reduction_window_size)
-        windowed_k = window_partition(
-            k.mean(dim=1), window_size=self.reduction_window_size
-        )
-        reduction_factor = 3 * self.reduction_window_size**2 // 4
-        m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=reduction_factor)
-        merged_x = m(windowed_x)
-
-        x = window_reverse(
-            merged_x,
-            window_size=self.reduction_window_size // 2,
-            H=H // 2,
-            W=W // 2,
-        )
-
-        x = self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-
-class WinToMeNATLayer(nn.Module):
+class WinToMeNATBlock(nn.Module):
     def __init__(
         self,
         dim,
@@ -310,6 +238,79 @@ class WinToMeNATLayer(nn.Module):
         x = self.attn(x)
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
+        return x
+
+
+class WinToMeNATReductionBlock(nn.Module):
+    def __init__(
+        self,
+        dim,
+        num_heads,
+        kernel_size=7,
+        reduction_window_size=4,
+        dilation=1,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        qk_scale=None,
+        drop=0.0,
+        attn_drop=0.0,
+        drop_path=0.0,
+        act_layer=nn.GELU,
+        norm_layer=nn.LayerNorm,
+        **kwargs,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.reduction_window_size = reduction_window_size
+        self.num_heads = num_heads
+        self.mlp_ratio = mlp_ratio
+
+        self.norm1 = norm_layer(dim)
+        self.attn = WinToMeNeighborhoodAttention2D(
+            dim,
+            kernel_size=kernel_size,
+            dilation=dilation,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            attn_drop=attn_drop,
+            proj_drop=drop,
+        )
+
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.norm2 = norm_layer(dim)
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(
+            in_features=dim,
+            out_features=dim * 2,
+            hidden_features=mlp_hidden_dim,
+            act_layer=act_layer,
+            drop=drop,
+        )
+
+    def forward(self, x):
+        B, H, W, C = x.shape
+
+        shortcut = x
+        x = self.norm1(x)
+        x, k = self.attn(x, return_keys=True)
+        x = shortcut + self.drop_path(x)
+        windowed_x = window_partition(x, window_size=self.reduction_window_size)
+        windowed_k = window_partition(
+            k.mean(dim=1), window_size=self.reduction_window_size
+        )
+        reduction_factor = 3 * self.reduction_window_size**2 // 4
+        m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=reduction_factor)
+        merged_x = m(windowed_x)
+
+        x = window_reverse(
+            merged_x,
+            window_size=self.reduction_window_size // 2,
+            H=H // 2,
+            W=W // 2,
+        )
+
+        x = self.drop_path(self.mlp(self.norm2(x)))
         return x
 
 
@@ -383,7 +384,7 @@ class WinToMeBasicLayer(nn.Module):
 
         # build blocks
         blocks_list = [
-            WinToMeNATLayer(
+            WinToMeNATBlock(
                 dim=dim,
                 num_heads=num_heads,
                 kernel_size=kernel_size,
@@ -401,7 +402,7 @@ class WinToMeBasicLayer(nn.Module):
 
         if self.downsample == "tome":
             blocks_list.append(
-                WinToMeNATReductionLayer(
+                WinToMeNATReductionBlock(
                     dim=dim,
                     num_heads=num_heads,
                     kernel_size=kernel_size,
@@ -421,7 +422,7 @@ class WinToMeBasicLayer(nn.Module):
 
         else:
             blocks_list.append(
-                WinToMeNATLayer(
+                WinToMeNATBlock(
                     dim=dim,
                     num_heads=num_heads,
                     kernel_size=kernel_size,
@@ -441,8 +442,9 @@ class WinToMeBasicLayer(nn.Module):
         self.blocks = nn.ModuleList(blocks_list)
 
     def forward(self, x):
-        for blk in self.blocks:
+        for idx, blk in enumerate(self.blocks):
             x = blk(x)
+
         if self.downsampler is not None:
             x = self.downsampler(x)
         return x
@@ -580,12 +582,9 @@ class WinToMeDiNAT_s(nn.Module):
     def forward_features(self, x):
         x = self.patch_embed(x)
         x = self.pos_drop(x)
-        # print(f"\t After patch embed and pos drop: {x.shape}")
 
         for idx, layer in enumerate(self.layers):
-            # print(f"\t Before {idx} layer: {x.shape}")
             x = layer(x)
-            # print(f"\t After {idx} layer: {x.shape}")
 
         x = self.norm(x).flatten(1, 2)
         x = self.avgpool(x.transpose(1, 2))

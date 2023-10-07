@@ -24,7 +24,7 @@ from wintome_dinats import (
     wintome_dinat_s_large_384,
 )
 
-from dinats import dinat_s_tiny
+from dinats import dinat_s_large_384
 from extras import get_gflops, get_mparams
 
 from nat import nat_tiny, nat_mini, nat_small, nat_base
@@ -37,13 +37,14 @@ model_clss = [
     wintome_nat_s_base,
     wintome_nat_s_large,
     wintome_nat_s_large_21k,
-    # wintome_nat_s_large_384,
+    wintome_nat_s_large_384,
     wintome_dinat_s_tiny,
     wintome_dinat_s_small,
     wintome_dinat_s_base,
     wintome_dinat_s_large,
     wintome_dinat_s_large_21k,
-    # wintome_dinat_s_large_384,
+    wintome_dinat_s_large_384,
+    dinat_s_large_384
 ]
 
 
@@ -52,9 +53,9 @@ for model_cls in model_clss:
     model = model_cls()
     
     # print(model)
-    # print(model(torch.rand(2, 3, 224, 224)).shape)
+    print(model(torch.rand(2, 3, 224, 224)).shape)
 
-    summary(model, input_data=(3, 224, 224), device="cuda:0")
+    # summary(model, input_data=(3, 224, 224), device="cuda:0")
     # print(f"WinTomeNAT flops: ", get_gflops(model, device="cuda:0"))
     # print(f"WinTomeNAT params: ", get_mparams(model, device="cuda:0"))
     # print("=" * 80)
