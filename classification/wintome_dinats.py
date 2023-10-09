@@ -282,6 +282,12 @@ class WinToMeNATReductionBlock(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
             in_features=dim,
+            hidden_features=mlp_hidden_dim,
+            act_layer=act_layer,
+            drop=drop,
+        )
+        self.upsample_mlp = Mlp(
+            in_features=dim,
             out_features=dim * 2,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
@@ -310,7 +316,8 @@ class WinToMeNATReductionBlock(nn.Module):
             W=W // 2,
         )
 
-        x = self.drop_path(self.mlp(self.norm2(x)))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x = self.upsample_mlp(x)
         return x
 
 
