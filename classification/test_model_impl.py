@@ -1,4 +1,5 @@
 import torch
+from torch.optim import SGD
 from torchsummary import summary
 
 from wintome_nat import (
@@ -7,7 +8,6 @@ from wintome_nat import (
     wintome_nat_small,
     wintome_nat_base,
 )
-
 
 from wintome_dinats import (
     wintome_nat_s_tiny,
@@ -24,10 +24,11 @@ from wintome_dinats import (
     wintome_dinat_s_large_384,
 )
 
+from nat import nat_tiny, nat_mini, nat_small, nat_base
 from dinats import dinat_s_large_384
+
 from extras import get_gflops, get_mparams
 
-from nat import nat_tiny, nat_mini, nat_small, nat_base
 
 
 model_clss = [
@@ -47,19 +48,34 @@ model_clss = [
     dinat_s_large_384
 ]
 
+TEST_BACKPROP = True
 
 for model_cls in model_clss:
     print(model_cls.__name__)
     model = model_cls()
+    outputs = model(torch.rand(2, 3, 224, 224))
     
-    # print(model)
-    print(model(torch.rand(2, 3, 224, 224)).shape)
-
+    
+    if TEST_BACKPROP:
+        weight_sum = 0
+        for param in model.parameters():
+            weight_sum += param.sum()
+        opt = SGD(model.parameters(), lr=1)
+        opt.zero_grad()
+        outputs.sum().backward()
+        opt.step()
+        new_weight_sum = 0
+        for param in model.parameters():
+            new_weight_sum += param.sum()
+        print(weight_sum)
+        print(new_weight_sum)
+        assert new_weight_sum != weight_sum
+    
     # summary(model, input_data=(3, 224, 224), device="cuda:0")
     # print(f"WinTomeNAT flops: ", get_gflops(model, device="cuda:0"))
     # print(f"WinTomeNAT params: ", get_mparams(model, device="cuda:0"))
     # print("=" * 80)
-    # break
+    break
 
 # model = dinat_s_tiny()
 # # print(model(torch.rand(2, 3, 224, 224)).shape)

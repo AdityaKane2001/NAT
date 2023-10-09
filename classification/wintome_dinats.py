@@ -299,9 +299,18 @@ class WinToMeNATReductionBlock(nn.Module):
         windowed_k = window_partition(
             k.mean(dim=1), window_size=self.reduction_window_size
         )
-        reduction_factor = 3 * self.reduction_window_size**2 // 4
+        reduction_factor = self.reduction_window_size**2 // 2
+        # print(f"{windowed_k.shape=}")
         m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=reduction_factor)
-        merged_x = m(windowed_x)
+        merged_x, merged_metric = m(windowed_x, return_merged_metric=True)
+        
+        # print(f"{merged_x.shape=}")
+        # print(f"{merged_metric.shape=}")
+        
+        reduction_factor = reduction_factor // 2
+        m, u = windowed_unequal_bipartite_soft_matching(merged_metric, r=reduction_factor)
+        merged_x = m(merged_x)
+        
 
         x = window_reverse(
             merged_x,
