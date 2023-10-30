@@ -1,4 +1,4 @@
-model: dinat_s_tiny
+model: wintome_nat_s_tiny
 lr: 1e-3
 warmup_lr: 1e-6
 min_lr: 5e-6
