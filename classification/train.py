@@ -48,6 +48,7 @@ from wintome_dinats import *
 from dinat import *
 from nats import *
 from dinats import *
+from pool_dinats import *
 from isotropic import *
 from extras import get_gflops, get_mparams
 
