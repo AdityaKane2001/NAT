@@ -24,12 +24,15 @@ def windowed_unequal_bipartite_soft_matching(
     r: int,
 ):
     """
+    metric: tensor corresponding to vectors for each token to calculate merging
+        with
+    r: number of tokens to reduce from existing tokens 
+    (eg. if no. of input tokens is 100 and r is 75, the resulting tensor will 
+    have 25 tokens)
+
     Assumes x to be of the shape (bs, p, p, t, c)
     &  metric to be of the shape (bs, p, p, t, c // num_heads)
 
-    Caveats:
-        - Currently supports only square images and square merge windows
-        - Manually merges tokens when merge_window_size is less than 3
     """
     protected = 0
     # We can only reduce by a maximum of 50% tokens
