@@ -39,40 +39,54 @@ model_urls = {
 
 
 def get_layerwise_reductions(Ns, Ls, window_sizes=[3, 4, 5, 6]):
-    blockwise_reductions = list()
+    layerwise_reductions = list()
     for n_idx in range(len(Ns) - 1):
         input_size = Ns[n_idx]
         diff = Ns[n_idx] - Ns[n_idx + 1]
 
         slope = diff / Ls[n_idx]
 
-        per_layer_outputs = [int(input_size - (slope * (i + 1))) for i in range(Ls[n_idx])]
+        per_layer_outputs = [
+            int(input_size - (slope * (i + 1))) for i in range(Ls[n_idx])
+        ]
         # These are ideal output shapes, based on reducing tokens linearly
-        
-        per_layer_diff = [input_size - per_layer_op for per_layer_op in per_layer_outputs]
+
+        per_layer_diff = [
+            input_size - per_layer_op for per_layer_op in per_layer_outputs
+        ]
         per_layer_outputs.insert(0, input_size)
 
-        reduction_layers = list()
+        reduction_blocks = list()
 
         for layer_idx in range(Ls[n_idx]):
             # for every layer, check if
             #    1. input size is divisible by window size
-            #        1.1 if yes, check if reducing each window by one will have the intended effect 
+            #        1.1 if yes, check if reducing each window by one will have the intended effect
             #        1.2 if no, go to next window size
             #    2. append none if no window size works
             intra_layer_input_size = per_layer_outputs[layer_idx]
             intra_layer_output_size = per_layer_outputs[layer_idx + 1]
-            
+
             for win_size in window_sizes:
                 if intra_layer_input_size % win_size == 0:
-                    if intra_layer_input_size / win_size == (intra_layer_input_size - intra_layer_output_size):
-                        reduction_layers.append(win_size)
+                    if intra_layer_input_size / win_size == (
+                        intra_layer_input_size - intra_layer_output_size
+                    ):
+                        reduction_blocks.append(win_size)
                         break
             else:
-                reduction_layers.append(None)
-                per_layer_outputs[layer_idx + 1] =  per_layer_outputs[layer_idx]
-    
-    
+                reduction_blocks.append(None)
+                per_layer_outputs[layer_idx + 1] = per_layer_outputs[layer_idx]
+        layerwise_reductions.append(
+            dict(
+                reduction_blocks=reduction_blocks,
+                pool=per_layer_outputs[-1] != Ns[n_idx + 1],
+                expected_output_shape=Ns[n_idx + 1],
+            )
+        )
+
+    return layerwise_reductions
+
 
 def window_partition(x, window_size):
     """
@@ -283,8 +297,8 @@ class WinToMeNATReductionBlock(nn.Module):
         dim,
         num_heads,
         kernel_size=7,
-        reduction_window_size=4,
-        target_size=None,
+        reduction_window_size=None,
+        target_window_size=None,
         dilation=1,
         mlp_ratio=4.0,
         qkv_bias=True,
@@ -299,14 +313,16 @@ class WinToMeNATReductionBlock(nn.Module):
         super().__init__()
         self.dim = dim
         self.reduction_window_size = reduction_window_size
-        if target_size == None:
-            self.target_size = int((self.reduction_window_size**2) // 4)
+        self.target_window_size = None
+        if target_window_size is None:
+            if self.reduction_window_size is not None:
+                self.target_window_size = self.reduction_window_size - 1
         else:
-            self.target_size = target_size
-            assert (
-                self.target_size <= reduction_window_size
-            ), f"Target tokens should be less than window size, "\
-               f"got {target_size=} and {reduction_window_size=}"
+            self.target_window_size = target_window_size
+            assert self.target_window_size <= reduction_window_size, (
+                f"Target window size should be less than reduction window size, "
+                f"got {target_window_size=} and {reduction_window_size=}"
+            )
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
 
@@ -331,13 +347,13 @@ class WinToMeNATReductionBlock(nn.Module):
             act_layer=act_layer,
             drop=drop,
         )
-        self.upsample_mlp = Mlp(
-            in_features=dim,
-            out_features=dim * 2,
-            hidden_features=mlp_hidden_dim,
-            act_layer=act_layer,
-            drop=drop,
-        )
+        # self.upsample_mlp = Mlp(
+        #     in_features=dim,
+        #     out_features=dim * 2,
+        #     hidden_features=mlp_hidden_dim,
+        #     act_layer=act_layer,
+        #     drop=drop,
+        # )
 
     def forward(self, x):
         B, H, W, C = x.shape
@@ -346,23 +362,26 @@ class WinToMeNATReductionBlock(nn.Module):
         x = self.norm1(x)
         x, k = self.attn(x, return_keys=True)
         x = shortcut + self.drop_path(x)
-        windowed_x = window_partition(x, window_size=self.reduction_window_size)
-        windowed_k = window_partition(
-            k.mean(dim=1), window_size=self.reduction_window_size
-        )
-        to_reduce = (self.reduction_window_size ** 2) - self.target_tokens
-        m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=to_reduce)
-        merged_x = m(windowed_x)
 
-        x = window_reverse(
-            merged_x,
-            window_size=self.reduction_window_size // 2,
-            H=H // 2,
-            W=W // 2,
-        )
+        if self.reduction_window_size is not None:
+            windowed_x = window_partition(x, window_size=self.reduction_window_size)
+            windowed_k = window_partition(
+                k.mean(dim=1), window_size=self.reduction_window_size
+            )
+
+            to_reduce = (self.reduction_window_size**2) - (self.target_window_size**2)
+            m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=to_reduce)
+            merged_x = m(windowed_x)
+
+            x = window_reverse(
+                merged_x,
+                window_size=self.target_window_size,
+                H=(H // self.reduction_window_size) * self.target_window_size,
+                W=(W // self.reduction_window_size) * self.target_window_size,
+            )
 
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        x = self.upsample_mlp(x)
+        # x = self.upsample_mlp(x)
         return x
 
 
@@ -421,18 +440,25 @@ class WinToMeBasicLayer(nn.Module):
         attn_drop=0.0,
         drop_path=0.0,
         norm_layer=nn.LayerNorm,
-        downsample=None,
     ):
         super().__init__()
         self.dim = dim
         self.depth = depth
 
         # patch merging layer
-        self.downsample = downsample
-        self.downsampler = None
-        if downsample is not None:
-            if downsample == "patchmerge":
-                self.downsampler = PatchMerging(dim=dim, norm_layer=norm_layer)
+        # self.downsample = downsample
+        # self.downsampler = None
+        # if downsample is not None:
+        #     if downsample == "patchmerge":
+        #         self.downsampler = PatchMerging(dim=dim, norm_layer=norm_layer)
+
+        # try:
+        #     assert hasattr(self, "reduction_policy")
+        # except AssertionError:
+        #     print("Reduction policy not set, defaulting to average pooling")
+        #     self.reduction_policy = dict(
+        #         reduction_blocks=[None for _ in range(self.depth)], pool=True
+        #     )
 
         # build blocks
         blocks_list = [
@@ -441,8 +467,7 @@ class WinToMeBasicLayer(nn.Module):
                 num_heads=num_heads,
                 kernel_size=kernel_size,
                 dilation=1 if dilations is None else dilations[i],
-                reduction_window_size=None,
-                target_size=None,
+                reduction_window_size=self.reduction_policy["reduction_blocks"][i],
                 mlp_ratio=mlp_ratio,
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
@@ -453,13 +478,21 @@ class WinToMeBasicLayer(nn.Module):
             )
             for i in range(depth)
         ]
-
+        
         self.blocks = nn.ModuleList(blocks_list)
+        self.upsample = Mlp(in_features=dim, out_features=dim * 2)
 
     def forward(self, x):
         for idx, blk in enumerate(self.blocks):
             x = blk(x)
 
+        if self.reduction_policy["pool"]:
+            x = torch.nn.functional.adaptive_avg_pool2d(
+                x.permute(0, 3, 1, 2), self.reduction_policy["expected_output_shape"]
+            ).permute(0, 2, 3, 1)
+
+        x = self.upsample(x)
+        
         # if self.downsampler is not None:
         #     x = self.downsampler(x)
         return x
@@ -523,6 +556,7 @@ class WinToMeDiNAT_s(nn.Module):
 
         self.num_classes = num_classes
         self.num_layers = len(depths)
+        self.depths = depths
         self.embed_dim = embed_dim
         self.patch_norm = patch_norm
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
@@ -536,9 +570,11 @@ class WinToMeDiNAT_s(nn.Module):
             norm_layer=norm_layer if self.patch_norm else None,
         )
 
-        # Smooth WinTome
-        self.layerwise_reduction = get_layerwise_reductions()
-        
+        # Smooth WinTome: populate on first call
+        self.layerwise_reduction = None
+        self.expected_output_shapes = None
+        self.past_input_size = 0
+
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth
@@ -562,7 +598,7 @@ class WinToMeDiNAT_s(nn.Module):
                 drop=drop_rate,
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
-                norm_layer=norm_layer
+                norm_layer=norm_layer,
             )
             # print(f"LAYER NUMBER {i_layer}")
             # print(f"\t{layer.blocks[depths[i_layer] - 1].mlp}")
@@ -603,8 +639,26 @@ class WinToMeDiNAT_s(nn.Module):
         return x
 
     def forward(self, x):
+        B, C, H, W = x.shape
+
+        assert H == W, "Smooth WinToMe currently supports only square images"
+
+        if H != self.past_input_size:
+            self.expected_input_shapes = [H // (2 ** (i + 2)) for i in range(4)]
+
+            if self.layerwise_reduction is None:
+                self.layerwise_reduction = get_layerwise_reductions(
+                    self.expected_input_shapes, self.depths
+                )
+                # print(self.layerwise_reduction)
+
+                for layer_idx, layer in enumerate(self.layers[:-1]):
+                    layer.reduction_policy = self.layerwise_reduction[layer_idx]
+
         x = self.forward_features(x)
         x = self.head(x)
+
+        self.past_input_size = H
         return x
 
 
