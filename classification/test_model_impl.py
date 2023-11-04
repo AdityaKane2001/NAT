@@ -24,6 +24,8 @@ from wintome_dinats import (
     wintome_dinat_s_large_384,
 )
 
+from pool_dinats import pool_dinat_s_tiny
+
 from dinats import dinat_s_large_384
 from extras import get_gflops, get_mparams
 
@@ -31,20 +33,21 @@ from nat import nat_tiny, nat_mini, nat_small, nat_base
 
 
 model_clss = [
-    wintome_nat_s_tiny,
-    # dinat_s_tiny,
-    wintome_nat_s_small,
-    wintome_nat_s_base,
-    wintome_nat_s_large,
-    wintome_nat_s_large_21k,
-    wintome_nat_s_large_384,
-    wintome_dinat_s_tiny,
-    wintome_dinat_s_small,
-    wintome_dinat_s_base,
-    wintome_dinat_s_large,
-    wintome_dinat_s_large_21k,
-    wintome_dinat_s_large_384,
-    dinat_s_large_384
+    pool_dinat_s_tiny,
+    # wintome_nat_s_tiny,
+    # # dinat_s_tiny,
+    # wintome_nat_s_small,
+    # wintome_nat_s_base,
+    # wintome_nat_s_large,
+    # wintome_nat_s_large_21k,
+    # wintome_nat_s_large_384,
+    # wintome_dinat_s_tiny,
+    # wintome_dinat_s_small,
+    # wintome_dinat_s_base,
+    # wintome_dinat_s_large,
+    # wintome_dinat_s_large_21k,
+    # wintome_dinat_s_large_384,
+    # dinat_s_large_384
 ]
 
 

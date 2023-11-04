@@ -80,7 +80,7 @@ class NATransformerLayer(nn.Module):
         return x
 
 
-class PatchMerging(nn.Module):
+class PatchPool(nn.Module):
     """
     Based on Swin Transformer
     https://arxiv.org/abs/2103.14030
@@ -92,7 +92,7 @@ class PatchMerging(nn.Module):
         self.dim = dim
         self.upsample = nn.Linear(dim, 2 * dim, bias=False)
         # self.avgpool = nn.AdaptiveMaxPool2d()
-        self.norm = norm_layer(4 * dim)
+        self.norm = norm_layer(dim)
 
     def forward(self, x):
         B, H, W, C = x.shape
@@ -114,13 +114,12 @@ class PatchMerging(nn.Module):
         # x = x.view(B, (H + 1) // 2, (W + 1) // 2, 4 * C)  # B H/2 W/2 4*C
 
         x = torch.nn.functional.avg_pool2d(
-            x,
+            x.permute((0, 3, 1, 2)),
             kernel_size=(2, 2),
             stride=(2, 2),
             padding=padding,
             count_include_pad=False,
-        )
-
+        ).permute((0, 2, 3, 1))
         x = self.norm(x)
         x = self.upsample(x)
         return x
@@ -283,7 +282,7 @@ class DiNAT_s(nn.Module):
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                 norm_layer=norm_layer,
-                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
+                downsample=PatchPool if (i_layer < self.num_layers - 1) else None,
             )
             self.layers.append(layer)
 
