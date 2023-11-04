@@ -57,7 +57,7 @@ for model_cls in model_clss:
     
     # print(model)
     print(model(torch.rand(2, 3, 224, 224)).shape)
-    break
+    # break
 
     # summary(model, input_data=(3, 224, 224), device="cuda:0")
     # print(f"WinTomeNAT flops: ", get_gflops(model, device="cuda:0"))

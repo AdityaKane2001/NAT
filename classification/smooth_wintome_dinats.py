@@ -38,7 +38,7 @@ model_urls = {
 }
 
 
-def get_layerwise_reductions(Ns, Ls, window_sizes=[3, 4, 5, 6]):
+def get_layerwise_reductions(Ns, Ls, allowed_window_sizes=[3, 4, 5, 6, 7]):
     layerwise_reductions = list()
     for n_idx in range(len(Ns) - 1):
         input_size = Ns[n_idx]
@@ -67,7 +67,7 @@ def get_layerwise_reductions(Ns, Ls, window_sizes=[3, 4, 5, 6]):
             intra_layer_input_size = per_layer_outputs[layer_idx]
             intra_layer_output_size = per_layer_outputs[layer_idx + 1]
 
-            for win_size in window_sizes:
+            for win_size in allowed_window_sizes:
                 if intra_layer_input_size % win_size == 0:
                     if intra_layer_input_size / win_size == (
                         intra_layer_input_size - intra_layer_output_size
@@ -298,7 +298,6 @@ class WinToMeNATReductionBlock(nn.Module):
         num_heads,
         kernel_size=7,
         reduction_window_size=None,
-        target_window_size=None,
         dilation=1,
         mlp_ratio=4.0,
         qkv_bias=True,
@@ -313,16 +312,16 @@ class WinToMeNATReductionBlock(nn.Module):
         super().__init__()
         self.dim = dim
         self.reduction_window_size = reduction_window_size
-        self.target_window_size = None
-        if target_window_size is None:
-            if self.reduction_window_size is not None:
-                self.target_window_size = self.reduction_window_size - 1
-        else:
-            self.target_window_size = target_window_size
-            assert self.target_window_size <= reduction_window_size, (
-                f"Target window size should be less than reduction window size, "
-                f"got {target_window_size=} and {reduction_window_size=}"
-            )
+        # self.target_window_size = None
+        # if target_window_size is None:
+        #     if self.reduction_window_size is not None:
+        #         self.target_window_size = self.reduction_window_size - 1
+        # else:
+        #     self.target_window_size = target_window_size
+        #     assert self.target_window_size <= reduction_window_size, (
+        #         f"Target window size should be less than reduction window size, "
+        #         f"got {target_window_size=} and {reduction_window_size=}"
+        #     )
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
 
@@ -347,13 +346,6 @@ class WinToMeNATReductionBlock(nn.Module):
             act_layer=act_layer,
             drop=drop,
         )
-        # self.upsample_mlp = Mlp(
-        #     in_features=dim,
-        #     out_features=dim * 2,
-        #     hidden_features=mlp_hidden_dim,
-        #     act_layer=act_layer,
-        #     drop=drop,
-        # )
 
     def forward(self, x):
         B, H, W, C = x.shape
@@ -364,20 +356,22 @@ class WinToMeNATReductionBlock(nn.Module):
         x = shortcut + self.drop_path(x)
 
         if self.reduction_window_size is not None:
+            target_window_size = self.reduction_window_size - 1
+            
             windowed_x = window_partition(x, window_size=self.reduction_window_size)
             windowed_k = window_partition(
                 k.mean(dim=1), window_size=self.reduction_window_size
             )
 
-            to_reduce = (self.reduction_window_size**2) - (self.target_window_size**2)
+            to_reduce = (self.reduction_window_size**2) - (target_window_size**2)
             m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=to_reduce)
             merged_x = m(windowed_x)
 
             x = window_reverse(
                 merged_x,
-                window_size=self.target_window_size,
-                H=(H // self.reduction_window_size) * self.target_window_size,
-                W=(W // self.reduction_window_size) * self.target_window_size,
+                window_size=target_window_size,
+                H=(H // self.reduction_window_size) * target_window_size,
+                W=(W // self.reduction_window_size) * target_window_size,
             )
 
         x = x + self.drop_path(self.mlp(self.norm2(x)))
@@ -440,10 +434,13 @@ class WinToMeBasicLayer(nn.Module):
         attn_drop=0.0,
         drop_path=0.0,
         norm_layer=nn.LayerNorm,
+        reduction_policy=None,
+        upsample=True
     ):
         super().__init__()
         self.dim = dim
         self.depth = depth
+        self.reduction_policy = reduction_policy
 
         # patch merging layer
         # self.downsample = downsample
@@ -467,7 +464,7 @@ class WinToMeBasicLayer(nn.Module):
                 num_heads=num_heads,
                 kernel_size=kernel_size,
                 dilation=1 if dilations is None else dilations[i],
-                reduction_window_size=self.reduction_policy["reduction_blocks"][i],
+                reduction_window_size=self.reduction_policy["reduction_blocks"][i] if self.reduction_policy is not None else None,
                 mlp_ratio=mlp_ratio,
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
@@ -480,16 +477,22 @@ class WinToMeBasicLayer(nn.Module):
         ]
         
         self.blocks = nn.ModuleList(blocks_list)
-        self.upsample = Mlp(in_features=dim, out_features=dim * 2)
+        if upsample:
+            self.upsample = Mlp(in_features=dim, out_features=dim * 2)
+        else:
+            self.upsample = nn.Identity()
 
     def forward(self, x):
         for idx, blk in enumerate(self.blocks):
+            blk.reduction_window_size = self.reduction_policy["reduction_blocks"][idx] if self.reduction_policy is not None else None
             x = blk(x)
+            # print(f"\t{idx}th block output: {x.shape}")
 
-        if self.reduction_policy["pool"]:
-            x = torch.nn.functional.adaptive_avg_pool2d(
-                x.permute(0, 3, 1, 2), self.reduction_policy["expected_output_shape"]
-            ).permute(0, 2, 3, 1)
+        if self.reduction_policy is not None:
+            if self.reduction_policy["pool"]:
+                x = torch.nn.functional.adaptive_avg_pool2d(
+                    x.permute(0, 3, 1, 2), self.reduction_policy["expected_output_shape"]
+                ).permute(0, 2, 3, 1)
 
         x = self.upsample(x)
         
@@ -570,10 +573,10 @@ class WinToMeDiNAT_s(nn.Module):
             norm_layer=norm_layer if self.patch_norm else None,
         )
 
-        # Smooth WinTome: populate on first call
-        self.layerwise_reduction = None
-        self.expected_output_shapes = None
-        self.past_input_size = 0
+        # Smooth WinTome
+        self.past_input_size = 224
+        self.layerwise_reduction_policy = None
+        self.build_reduction_policy(self.past_input_size) # populates `self.layerwise_reduction_policy`
 
         self.pos_drop = nn.Dropout(p=drop_rate)
 
@@ -585,7 +588,6 @@ class WinToMeDiNAT_s(nn.Module):
         # build layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            # print(f"{i_layer}'s downsample_method: {downsample_method}")
             layer = WinToMeBasicLayer(
                 dim=int(embed_dim * 2**i_layer),
                 depth=depths[i_layer],
@@ -599,11 +601,13 @@ class WinToMeDiNAT_s(nn.Module):
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                 norm_layer=norm_layer,
+                reduction_policy=self.layerwise_reduction_policy[i_layer] if i_layer < (self.num_layers - 1) else None,
+                upsample=True if i_layer < (self.num_layers - 1) else False
             )
-            # print(f"LAYER NUMBER {i_layer}")
-            # print(f"\t{layer.blocks[depths[i_layer] - 1].mlp}")
             self.layers.append(layer)
 
+        
+        
         self.norm = norm_layer(self.num_features)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.head = (
@@ -626,39 +630,52 @@ class WinToMeDiNAT_s(nn.Module):
     def no_weight_decay_keywords(self):
         return {"rpb"}
 
+    def build_reduction_policy(self, H):
+        self.expected_input_shapes = [H // (2 ** (i + 2)) for i in range(4)]
+
+        self.layerwise_reduction_policy = get_layerwise_reductions(
+            self.expected_input_shapes, self.depths
+        )
+        # print(self.layerwise_reduction_policy)
+        
+
+    def assign_reduction_policy(self):
+        for layer_idx, layer in enumerate(self.layers[:-1]):
+            layer.reduction_policy = self.layerwise_reduction_policy[layer_idx]
+    
     def forward_features(self, x):
-        x = self.patch_embed(x)
-        x = self.pos_drop(x)
-
-        for idx, layer in enumerate(self.layers):
-            x = layer(x)
-
-        x = self.norm(x).flatten(1, 2)
-        x = self.avgpool(x.transpose(1, 2))
-        x = torch.flatten(x, 1)
-        return x
-
-    def forward(self, x):
         B, C, H, W = x.shape
 
         assert H == W, "Smooth WinToMe currently supports only square images"
 
         if H != self.past_input_size:
-            self.expected_input_shapes = [H // (2 ** (i + 2)) for i in range(4)]
+            print("Rebuilt reduction policy")
+            self.build_reduction_policy(H)
+            self.assign_reduction_policy()
+            
+        x = self.patch_embed(x)
+        x = self.pos_drop(x)
 
-            if self.layerwise_reduction is None:
-                self.layerwise_reduction = get_layerwise_reductions(
-                    self.expected_input_shapes, self.depths
-                )
-                # print(self.layerwise_reduction)
+        # print(f"patch embed output: {x.shape}")
+        
+        for idx, layer in enumerate(self.layers):
+            x = layer(x)
+            # print(f"{idx}th layer output: {x.shape}")
 
-                for layer_idx, layer in enumerate(self.layers[:-1]):
-                    layer.reduction_policy = self.layerwise_reduction[layer_idx]
+        x = self.norm(x).flatten(1, 2)
+        x = self.avgpool(x.transpose(1, 2))
+        x = torch.flatten(x, 1)
+        
+        self.past_input_size = H
+        
+        return x
+
+    def forward(self, x):
 
         x = self.forward_features(x)
         x = self.head(x)
 
-        self.past_input_size = H
+        
         return x
 
 
