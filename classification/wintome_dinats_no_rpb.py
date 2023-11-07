@@ -21,20 +21,20 @@ from merge import windowed_unequal_bipartite_soft_matching
 model_urls = {
     # ImageNet-1K
     ## WinToME NAT-S
-    "wintome_nat_s_tiny_1k": "",
-    "wintome_nat_s_small_1k": "",
-    "wintome_nat_s_base_1k": "",
-    "wintome_nat_s_large_1k": "",
-    "wintome_nat_s_large_1k_384": "",
+    "wintome_nat_s_no_rpb_tiny_1k": "",
+    "wintome_nat_s_no_rpb_small_1k": "",
+    "wintome_nat_s_no_rpb_base_1k": "",
+    "wintome_nat_s_no_rpb_large_1k": "",
+    "wintome_nat_s_no_rpb_large_1k_384": "",
     ## WinToME DiNAT-S
-    "wintome_dinat_s_tiny_1k": "",
-    "wintome_dinat_s_small_1k": "",
-    "wintome_dinat_s_base_1k": "",
-    "wintome_dinat_s_large_1k": "",
-    "wintome_dinat_s_large_1k_384": "",
+    "wintome_dinat_s_no_rpb_tiny_1k": "",
+    "wintome_dinat_s_no_rpb_small_1k": "",
+    "wintome_dinat_s_no_rpb_base_1k": "",
+    "wintome_dinat_s_no_rpb_large_1k": "",
+    "wintome_dinat_s_no_rpb_large_1k_384": "",
     # ImageNet-21K
-    "wintome_nat_s_large_21k": "",
-    "wintome_dinat_s_large_21k": "",
+    "wintome_nat_s_no_rpb_large_21k": "",
+    "wintome_dinat_s_no_rpb_large_21k": "",
 }
 
 
@@ -615,9 +615,10 @@ class WinToMeDiNAT_s(nn.Module):
 
 # ==================== WinToMeNAT-S s ======================================== #
 @register_model
-def wintome_nat_s_tiny(pretrained=False, **kwargs):
+def wintome_nat_s_no_rpb_tiny(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 6, 2],
+        rpb=False,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -627,14 +628,14 @@ def wintome_nat_s_tiny(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_nat_s_tiny_1k"]
+        url = model_urls["wintome_nat_s_no_rpb_tiny_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_nat_s_small(pretrained=False, **kwargs):
+def wintome_nat_s_no_rpb_small(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
         num_heads=[3, 6, 12, 24],
@@ -646,16 +647,17 @@ def wintome_nat_s_small(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_nat_s_small_1k"]
+        url = model_urls["wintome_nat_s_no_rpb_small_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_nat_s_base(pretrained=False, **kwargs):
+def wintome_nat_s_no_rpb_base(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=128,
         mlp_ratio=4,
@@ -665,16 +667,17 @@ def wintome_nat_s_base(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_nat_s_base_1k"]
+        url = model_urls["wintome_nat_s_no_rpb_base_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_nat_s_large(pretrained=False, **kwargs):
+def wintome_nat_s_no_rpb_large(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -684,16 +687,17 @@ def wintome_nat_s_large(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_nat_s_large_1k"]
+        url = model_urls["wintome_nat_s_no_rpb_large_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_nat_s_large_384(pretrained=False, **kwargs):
+def wintome_nat_s_no_rpb_large_384(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -703,16 +707,17 @@ def wintome_nat_s_large_384(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_nat_s_large_1k_384"]
+        url = model_urls["wintome_nat_s_no_rpb_large_1k_384"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_nat_s_large_21k(pretrained=False, **kwargs):
+def wintome_nat_s_no_rpb_large_21k(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -722,7 +727,7 @@ def wintome_nat_s_large_21k(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_nat_s_large_21k"]
+        url = model_urls["wintome_nat_s_no_rpb_large_21k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
@@ -732,9 +737,10 @@ def wintome_nat_s_large_21k(pretrained=False, **kwargs):
 
 
 @register_model
-def wintome_dinat_s_tiny(pretrained=False, **kwargs):
+def wintome_dinat_s_no_rpb_tiny(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 6, 2],
+        rpb=False,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -749,16 +755,17 @@ def wintome_dinat_s_tiny(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_tiny_1k"]
+        url = model_urls["wintome_dinat_s_no_rpb_tiny_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_small(pretrained=False, **kwargs):
+def wintome_dinat_s_no_rpb_small(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -773,16 +780,17 @@ def wintome_dinat_s_small(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_small_1k"]
+        url = model_urls["wintome_dinat_s_no_rpb_small_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_base(pretrained=False, **kwargs):
+def wintome_dinat_s_no_rpb_base(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=128,
         mlp_ratio=4,
@@ -797,16 +805,17 @@ def wintome_dinat_s_base(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_base_1k"]
+        url = model_urls["wintome_dinat_s_no_rpb_base_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_large(pretrained=False, **kwargs):
+def wintome_dinat_s_no_rpb_large(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -821,16 +830,17 @@ def wintome_dinat_s_large(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_large_1k"]
+        url = model_urls["wintome_dinat_s_no_rpb_large_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_large_384(pretrained=False, **kwargs):
+def wintome_dinat_s_no_rpb_large_384(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -845,16 +855,17 @@ def wintome_dinat_s_large_384(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_large_1k_384"]
+        url = model_urls["wintome_dinat_s_no_rpb_large_1k_384"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_large_21k(pretrained=False, **kwargs):
+def wintome_dinat_s_no_rpb_large_21k(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=False,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -869,7 +880,7 @@ def wintome_dinat_s_large_21k(pretrained=False, **kwargs):
         **kwargs,
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_large_21k"]
+        url = model_urls["wintome_dinat_s_no_rpb_large_21k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
