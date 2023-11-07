@@ -35,6 +35,20 @@ model_urls = {
     # ImageNet-21K
     "smooth_wintome_nat_s_large_21k": "",
     "smooth_wintome_dinat_s_large_21k": "",
+    "smooth_wintome_nat_s_no_rpb_tiny_1k": "",
+    "smooth_wintome_nat_s_no_rpb_small_1k": "",
+    "smooth_wintome_nat_s_no_rpb_base_1k": "",
+    "smooth_wintome_nat_s_no_rpb_large_1k": "",
+    "smooth_wintome_nat_s_no_rpb_large_1k_384": "",
+    ## WinToME DiNAT-S
+    "smooth_wintome_dinat_s_no_rpb_tiny_1k": "",
+    "smooth_wintome_dinat_s_no_rpb_small_1k": "",
+    "smooth_wintome_dinat_s_no_rpb_base_1k": "",
+    "smooth_wintome_dinat_s_no_rpb_large_1k": "",
+    "smooth_wintome_dinat_s_no_rpb_large_1k_384": "",
+    # ImageNet-21K
+    "smooth_wintome_nat_s_no_rpb_large_21k": "",
+    "smooth_wintome_dinat_s_no_rpb_large_21k": "",
 }
 
 
@@ -247,6 +261,7 @@ class WinToMeNATBlock(nn.Module):
         dilation=1,
         mlp_ratio=4.0,
         qkv_bias=True,
+        rpb=True,
         qk_scale=None,
         drop=0.0,
         attn_drop=0.0,
@@ -267,6 +282,7 @@ class WinToMeNATBlock(nn.Module):
             dilation=dilation,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
+            bias=rpb,
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=drop,
@@ -301,6 +317,7 @@ class WinToMeNATReductionBlock(nn.Module):
         dilation=1,
         mlp_ratio=4.0,
         qkv_bias=True,
+        rpb=True,
         qk_scale=None,
         drop=0.0,
         attn_drop=0.0,
@@ -332,6 +349,7 @@ class WinToMeNATReductionBlock(nn.Module):
             dilation=dilation,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
+            rpb=rpb,
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=drop,
@@ -357,7 +375,7 @@ class WinToMeNATReductionBlock(nn.Module):
 
         if self.reduction_window_size is not None:
             target_window_size = self.reduction_window_size - 1
-            
+
             windowed_x = window_partition(x, window_size=self.reduction_window_size)
             windowed_k = window_partition(
                 k.mean(dim=1), window_size=self.reduction_window_size
@@ -429,13 +447,14 @@ class WinToMeBasicLayer(nn.Module):
         dilations=None,
         mlp_ratio=4.0,
         qkv_bias=True,
+        rpb=True,
         qk_scale=None,
         drop=0.0,
         attn_drop=0.0,
         drop_path=0.0,
         norm_layer=nn.LayerNorm,
         reduction_policy=None,
-        upsample=True
+        upsample=True,
     ):
         super().__init__()
         self.dim = dim
@@ -464,9 +483,12 @@ class WinToMeBasicLayer(nn.Module):
                 num_heads=num_heads,
                 kernel_size=kernel_size,
                 dilation=1 if dilations is None else dilations[i],
-                reduction_window_size=self.reduction_policy["reduction_blocks"][i] if self.reduction_policy is not None else None,
+                reduction_window_size=self.reduction_policy["reduction_blocks"][i]
+                if self.reduction_policy is not None
+                else None,
                 mlp_ratio=mlp_ratio,
                 qkv_bias=qkv_bias,
+                rpb=rpb,
                 qk_scale=qk_scale,
                 drop=drop,
                 attn_drop=attn_drop,
@@ -475,7 +497,7 @@ class WinToMeBasicLayer(nn.Module):
             )
             for i in range(depth)
         ]
-        
+
         self.blocks = nn.ModuleList(blocks_list)
         if upsample:
             self.upsample = Mlp(in_features=dim, out_features=dim * 2)
@@ -484,18 +506,23 @@ class WinToMeBasicLayer(nn.Module):
 
     def forward(self, x):
         for idx, blk in enumerate(self.blocks):
-            blk.reduction_window_size = self.reduction_policy["reduction_blocks"][idx] if self.reduction_policy is not None else None
+            blk.reduction_window_size = (
+                self.reduction_policy["reduction_blocks"][idx]
+                if self.reduction_policy is not None
+                else None
+            )
             x = blk(x)
             # print(f"\t{idx}th block output: {x.shape}")
 
         if self.reduction_policy is not None:
             if self.reduction_policy["pool"]:
                 x = torch.nn.functional.adaptive_avg_pool2d(
-                    x.permute(0, 3, 1, 2), self.reduction_policy["expected_output_shape"]
+                    x.permute(0, 3, 1, 2),
+                    self.reduction_policy["expected_output_shape"],
                 ).permute(0, 2, 3, 1)
 
         x = self.upsample(x)
-        
+
         # if self.downsampler is not None:
         #     x = self.downsampler(x)
         return x
@@ -547,6 +574,7 @@ class WinToMeDiNAT_s(nn.Module):
         dilations=None,
         mlp_ratio=4.0,
         qkv_bias=True,
+        rpb=True,
         qk_scale=None,
         drop_rate=0.0,
         attn_drop_rate=0.0,
@@ -576,7 +604,9 @@ class WinToMeDiNAT_s(nn.Module):
         # Smooth WinTome
         self.past_input_size = 224
         self.layerwise_reduction_policy = None
-        self.build_reduction_policy(self.past_input_size) # populates `self.layerwise_reduction_policy`
+        self.build_reduction_policy(
+            self.past_input_size
+        )  # populates `self.layerwise_reduction_policy`
 
         self.pos_drop = nn.Dropout(p=drop_rate)
 
@@ -596,18 +626,19 @@ class WinToMeDiNAT_s(nn.Module):
                 dilations=None if dilations is None else dilations[i_layer],
                 mlp_ratio=self.mlp_ratio,
                 qkv_bias=qkv_bias,
+                rpb=rpb,
                 qk_scale=qk_scale,
                 drop=drop_rate,
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                 norm_layer=norm_layer,
-                reduction_policy=self.layerwise_reduction_policy[i_layer] if i_layer < (self.num_layers - 1) else None,
-                upsample=True if i_layer < (self.num_layers - 1) else False
+                reduction_policy=self.layerwise_reduction_policy[i_layer]
+                if i_layer < (self.num_layers - 1)
+                else None,
+                upsample=True if i_layer < (self.num_layers - 1) else False,
             )
             self.layers.append(layer)
 
-        
-        
         self.norm = norm_layer(self.num_features)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.head = (
@@ -637,12 +668,11 @@ class WinToMeDiNAT_s(nn.Module):
             self.expected_input_shapes, self.depths
         )
         # print(self.layerwise_reduction_policy)
-        
 
     def assign_reduction_policy(self):
         for layer_idx, layer in enumerate(self.layers[:-1]):
             layer.reduction_policy = self.layerwise_reduction_policy[layer_idx]
-    
+
     def forward_features(self, x):
         B, C, H, W = x.shape
 
@@ -652,12 +682,12 @@ class WinToMeDiNAT_s(nn.Module):
             print("Rebuilt reduction policy")
             self.build_reduction_policy(H)
             self.assign_reduction_policy()
-            
+
         x = self.patch_embed(x)
         x = self.pos_drop(x)
 
         # print(f"patch embed output: {x.shape}")
-        
+
         for idx, layer in enumerate(self.layers):
             x = layer(x)
             # print(f"{idx}th layer output: {x.shape}")
@@ -665,17 +695,15 @@ class WinToMeDiNAT_s(nn.Module):
         x = self.norm(x).flatten(1, 2)
         x = self.avgpool(x.transpose(1, 2))
         x = torch.flatten(x, 1)
-        
+
         self.past_input_size = H
-        
+
         return x
 
     def forward(self, x):
-
         x = self.forward_features(x)
         x = self.head(x)
 
-        
         return x
 
 
@@ -684,6 +712,7 @@ class WinToMeDiNAT_s(nn.Module):
 def smooth_wintome_nat_s_tiny(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 6, 2],
+        rpb=True,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -703,6 +732,7 @@ def smooth_wintome_nat_s_tiny(pretrained=False, **kwargs):
 def smooth_wintome_nat_s_small(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -722,6 +752,7 @@ def smooth_wintome_nat_s_small(pretrained=False, **kwargs):
 def smooth_wintome_nat_s_base(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=128,
         mlp_ratio=4,
@@ -741,6 +772,7 @@ def smooth_wintome_nat_s_base(pretrained=False, **kwargs):
 def smooth_wintome_nat_s_large(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -760,6 +792,7 @@ def smooth_wintome_nat_s_large(pretrained=False, **kwargs):
 def smooth_wintome_nat_s_large_384(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -779,6 +812,7 @@ def smooth_wintome_nat_s_large_384(pretrained=False, **kwargs):
 def smooth_wintome_nat_s_large_21k(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -801,6 +835,7 @@ def smooth_wintome_nat_s_large_21k(pretrained=False, **kwargs):
 def smooth_wintome_dinat_s_tiny(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 6, 2],
+        rpb=True,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -825,6 +860,7 @@ def smooth_wintome_dinat_s_tiny(pretrained=False, **kwargs):
 def smooth_wintome_dinat_s_small(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
         mlp_ratio=4,
@@ -849,6 +885,7 @@ def smooth_wintome_dinat_s_small(pretrained=False, **kwargs):
 def smooth_wintome_dinat_s_base(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=128,
         mlp_ratio=4,
@@ -873,6 +910,7 @@ def smooth_wintome_dinat_s_base(pretrained=False, **kwargs):
 def smooth_wintome_dinat_s_large(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -897,6 +935,7 @@ def smooth_wintome_dinat_s_large(pretrained=False, **kwargs):
 def smooth_wintome_dinat_s_large_384(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -921,6 +960,7 @@ def smooth_wintome_dinat_s_large_384(pretrained=False, **kwargs):
 def smooth_wintome_dinat_s_large_21k(pretrained=False, **kwargs):
     model = WinToMeDiNAT_s(
         depths=[2, 2, 18, 2],
+        rpb=True,
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
         mlp_ratio=4,
@@ -936,6 +976,280 @@ def smooth_wintome_dinat_s_large_21k(pretrained=False, **kwargs):
     )
     if pretrained:
         url = model_urls["smooth_wintome_dinat_s_large_21k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+# ==================== WinToMeNAT-S s ======================================== #
+@register_model
+def smooth_wintome_nat_s_tiny(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 6, 2],
+        rpb=False,
+        num_heads=[3, 6, 12, 24],
+        embed_dim=96,
+        mlp_ratio=4,
+        drop_path_rate=0.2,
+        kernel_size=7,
+        dilations=None,
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_nat_s_tiny_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_nat_s_small(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[3, 6, 12, 24],
+        embed_dim=96,
+        mlp_ratio=4,
+        drop_path_rate=0.3,
+        kernel_size=7,
+        dilations=None,
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_nat_s_small_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_nat_s_base(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=128,
+        mlp_ratio=4,
+        drop_path_rate=0.5,
+        kernel_size=7,
+        dilations=None,
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_nat_s_base_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_nat_s_large(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=192,
+        mlp_ratio=4,
+        drop_path_rate=0.35,
+        kernel_size=7,
+        dilations=None,
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_nat_s_large_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_nat_s_large_384(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=192,
+        mlp_ratio=4,
+        drop_path_rate=0.35,
+        kernel_size=7,
+        dilations=None,
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_nat_s_large_1k_384"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_nat_s_large_21k(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=192,
+        mlp_ratio=4,
+        drop_path_rate=0.2,
+        kernel_size=7,
+        dilations=None,
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_nat_s_large_21k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+# ==================== WinToMeDiNAT-S s ====================================== #
+
+
+@register_model
+def smooth_wintome_dinat_s_no_rpb_tiny(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 6, 2],
+        rpb=False,
+        num_heads=[3, 6, 12, 24],
+        embed_dim=96,
+        mlp_ratio=4,
+        drop_path_rate=0.2,
+        kernel_size=7,
+        dilations=[
+            [1, 8],
+            [1, 4],
+            [1, 2, 1, 2, 1, 2],
+            [1, 1],
+        ],
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_dinat_s_no_rpb_tiny_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_dinat_s_no_rpb_small(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[3, 6, 12, 24],
+        embed_dim=96,
+        mlp_ratio=4,
+        drop_path_rate=0.3,
+        kernel_size=7,
+        dilations=[
+            [1, 8],
+            [1, 4],
+            [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            [1, 1],
+        ],
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_dinat_s_no_rpb_small_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_dinat_s_no_rpb_base(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=128,
+        mlp_ratio=4,
+        drop_path_rate=0.5,
+        kernel_size=7,
+        dilations=[
+            [1, 8],
+            [1, 4],
+            [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            [1, 1],
+        ],
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_dinat_s_no_rpb_base_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_dinat_s_no_rpb_large(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=192,
+        mlp_ratio=4,
+        drop_path_rate=0.35,
+        kernel_size=7,
+        dilations=[
+            [1, 8],
+            [1, 4],
+            [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            [1, 1],
+        ],
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_dinat_s_no_rpb_large_1k"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_dinat_s_no_rpb_large_384(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=192,
+        mlp_ratio=4,
+        drop_path_rate=0.35,
+        kernel_size=7,
+        dilations=[
+            [1, 13],
+            [1, 6],
+            [1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3],
+            [1, 1],
+        ],
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_dinat_s_no_rpb_large_1k_384"]
+        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
+        model.load_state_dict(checkpoint)
+    return model
+
+
+@register_model
+def smooth_wintome_dinat_s_no_rpb_large_21k(pretrained=False, **kwargs):
+    model = WinToMeDiNAT_s(
+        depths=[2, 2, 18, 2],
+        rpb=False,
+        num_heads=[4, 8, 16, 32],
+        embed_dim=192,
+        mlp_ratio=4,
+        drop_path_rate=0.2,
+        kernel_size=7,
+        dilations=[
+            [1, 8],
+            [1, 4],
+            [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            [1, 1],
+        ],
+        **kwargs,
+    )
+    if pretrained:
+        url = model_urls["smooth_wintome_dinat_s_no_rpb_large_21k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
