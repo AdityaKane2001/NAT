@@ -706,7 +706,7 @@ class WinToMeDiNAT_s(nn.Module):
 
         return x
 
-
+######################## With RPB ##############################################
 # ==================== WinToMeNAT-S s ======================================== #
 @register_model
 def smooth_wintome_nat_s_tiny(pretrained=False, **kwargs):
@@ -980,7 +980,7 @@ def smooth_wintome_dinat_s_large_21k(pretrained=False, **kwargs):
         model.load_state_dict(checkpoint)
     return model
 
-
+######################## No RPB ################################################
 # ==================== WinToMeNAT-S s ======================================== #
 @register_model
 def smooth_wintome_nat_s_tiny(pretrained=False, **kwargs):
