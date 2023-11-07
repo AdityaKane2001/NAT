@@ -38,7 +38,7 @@ model_urls = {
 }
 
 
-def get_layerwise_reductions(Ns, Ls, allowed_window_sizes=[3, 4, 5, 6, 7]):
+def get_layerwise_reductions(Ns, Ls, allowed_window_sizes=[3, 4, 5, 6]):
     layerwise_reductions = list()
     for n_idx in range(len(Ns) - 1):
         input_size = Ns[n_idx]
