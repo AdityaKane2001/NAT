@@ -45,6 +45,7 @@ from timm.utils import ApexScaler, NativeScaler
 from nat import *
 from wintome_nat import *
 from wintome_dinats import *
+from wintome_dinats_no_rpb import *
 from dinat import *
 from nats import *
 from dinats import *
