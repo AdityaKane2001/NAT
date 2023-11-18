@@ -35,6 +35,8 @@ model_urls = {
     # ImageNet-21K
     "smooth_wintome_nat_s_large_21k": "",
     "smooth_wintome_dinat_s_large_21k": "",
+    
+    ## No RPB
     "smooth_wintome_nat_s_no_rpb_tiny_1k": "",
     "smooth_wintome_nat_s_no_rpb_small_1k": "",
     "smooth_wintome_nat_s_no_rpb_base_1k": "",
@@ -203,11 +205,14 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         if bias:
+            print("With RPB!")
             self.rpb = nn.Parameter(
                 torch.zeros(num_heads, (2 * kernel_size - 1), (2 * kernel_size - 1))
             )
             trunc_normal_(self.rpb, std=0.02, mean=0.0, a=-2.0, b=2.0)
         else:
+            print("Without RPB!")
+            
             self.register_parameter("rpb", None)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
@@ -349,7 +354,7 @@ class WinToMeNATReductionBlock(nn.Module):
             dilation=dilation,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
-            rpb=rpb,
+            bias=rpb,
             qk_scale=qk_scale,
             attn_drop=attn_drop,
             proj_drop=drop,
