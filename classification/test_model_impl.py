@@ -27,13 +27,15 @@ from hybrid_dinat import hybrid_dinat_s_tiny
 from hybrid_vit import hybrid_dinat_rpb_isotropic_small
 from dinats import dinat_s_tiny
 from extras import get_gflops, get_mparams
-
+from isotropic import vitrpb_small, dinat_isotropic_small
 from nat import nat_tiny, nat_mini, nat_small, nat_base
 
 
 model_clss = [
-    hybrid_dinat_rpb_isotropic_small,
-    dinat_s_tiny
+    hybrid_dinat_rpb_isotropic_small, # 81.18
+    dinat_isotropic_small, # 80.8
+    vitrpb_small, # 81.2
+    # dinat_s_tiny
     # wintome_nat_s_tiny,
     # # dinat_s_tiny,
     # wintome_nat_s_small,
