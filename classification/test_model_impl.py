@@ -6,13 +6,16 @@ from dinats import dinat_s_large_384, dinat_s_tiny
 from extras import get_gflops, get_mparams
 from isotropic import nat_isotropic_small, dinat_isotropic_small, vitrpb_small
 from nat import nat_tiny, nat_mini, nat_small, nat_base
-from vit_pretrained import attnprune_vit_small_patch16_224_augreg_in21k, vit_small_patch16_224_augreg_in21k
+from vit_pretrained import *
 
 model_clss = [
-    attnprune_vit_small_patch16_224_augreg_in21k,
-    vit_small_patch16_224_augreg_in21k,
+    # attnprune_vit_small_patch16_224_augreg_in21k,
+    vit_small_patch16_224_augreg_in21k_ft_in1k,
+    tome_vit_small_patch16_224_augreg_in21k_f1_in1k,
+    # prunemap_vit_small_patch16_224_augreg_in21k,
+    attnmap_merge_tail_vit_small_patch16_224_augreg_in21k_f1_in1k
     # wintome_nat_s_tiny,
-    dinat_s_tiny,
+    # dinat_s_tiny,
     # nat_isotropic_small, 
     # dinat_isotropic_small, 
     # vitrpb_small,
@@ -37,12 +40,12 @@ for model_cls in model_clss:
     
     # print(model)
     # print(model(torch.rand(2, 3, 224, 224)).shape)
-    model.to("cuda:0")
+    model.to("cuda:2")
     # print(model)
 
     # summary(model, input_data=(3, 224, 224), device="cuda:0")
-    print(f"flops: ", get_gflops(model, device="cuda:0"))
-    print(f"params: ", get_mparams(model, device="cuda:0"))
+    print(f"flops: ", get_gflops(model, device="cuda:2"))
+    print(f"params: ", get_mparams(model, device="cuda:2"))
     print("=" * 80)
     # break
 

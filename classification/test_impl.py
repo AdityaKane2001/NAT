@@ -1,11 +1,15 @@
 import torch
-from tome.merge import attentive_pruning
+from tome.attnsum import attnsum_merge_tail
 
-x = torch.rand(4, 10, 16)
-attn = torch.randn(4, 10, 10)
+
+torch.manual_seed(43)
+
+x = torch.rand(1, 10, 16)
+keys = torch.rand(1, 10, 16)
+attn = torch.randn(1, 6, 10, 10)
 attn = attn.softmax(dim=-1)
 
-p, _ = attentive_pruning(attn, r=4, class_token=True, distill_token=True)
+p, _ = attnsum_merge_tail(r=2, attn=attn, metric=keys, has_class_token=True, has_distill_token=True)
 
 xp = p(x)
 print(xp.shape)
