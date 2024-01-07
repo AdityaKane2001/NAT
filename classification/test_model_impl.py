@@ -7,13 +7,16 @@ from extras import get_gflops, get_mparams
 from isotropic import nat_isotropic_small, dinat_isotropic_small, vitrpb_small
 from nat import nat_tiny, nat_mini, nat_small, nat_base
 from vit_pretrained import *
+from lowrank_dinats import * 
 
 model_clss = [
+    lowrank_dinat_s_tiny,
+    dinat_s_tiny
     # attnprune_vit_small_patch16_224_augreg_in21k,
-    vit_small_patch16_224_augreg_in21k_ft_in1k,
-    tome_vit_small_patch16_224_augreg_in21k_f1_in1k,
+    # vit_small_patch16_224_augreg_in21k_ft_in1k,
+    # tome_vit_small_patch16_224_augreg_in21k_f1_in1k,
     # prunemap_vit_small_patch16_224_augreg_in21k,
-    attnmap_merge_tail_vit_small_patch16_224_augreg_in21k_f1_in1k
+    # attnmap_merge_tail_vit_small_patch16_224_augreg_in21k_f1_in1k
     # wintome_nat_s_tiny,
     # dinat_s_tiny,
     # nat_isotropic_small, 

@@ -64,6 +64,7 @@ from dinat import *
 from nats import *
 from dinats import *
 from isotropic import *
+from lowrank_dinats import *
 from extras import get_gflops, get_mparams
 
 import yaml

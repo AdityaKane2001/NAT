@@ -2,7 +2,7 @@
 Dilated Neighborhood Attention Transformer.
 https://arxiv.org/abs/2209.15001
 
-wintome_DiNAT_s -- our alternative model.
+lowrank_DiNAT_s -- our alternative model.
 
 This source code is licensed under the license found in the
 LICENSE file in the root directory of this source tree.
@@ -12,103 +12,23 @@ import torch.nn as nn
 from torch.nn.functional import pad
 from timm.models.layers import trunc_normal_, DropPath, to_2tuple
 from timm.models.registry import register_model
-
-
-from natten.functional import natten2dav, natten2dqkrpb
-
-from merge import windowed_unequal_bipartite_soft_matching
+from natten.functional import natten2dqkrpb, natten2dav
+from nat import Mlp
 
 model_urls = {
     # ImageNet-1K
-    ## WinToME NAT-S
-    "wintome_nat_s_tiny_1k": "",
-    "wintome_nat_s_small_1k": "",
-    "wintome_nat_s_base_1k": "",
-    "wintome_nat_s_large_1k": "",
-    "wintome_nat_s_large_1k_384": "",
-    ## WinToME DiNAT-S
-    "wintome_dinat_s_tiny_1k": "",
-    "wintome_dinat_s_small_1k": "",
-    "wintome_dinat_s_base_1k": "",
-    "wintome_dinat_s_large_1k": "",
-    "wintome_dinat_s_large_1k_384": "",
-    # ImageNet-21K
-    "wintome_nat_s_large_21k": "",
-    "wintome_dinat_s_large_21k": "",
+    "lowrank_dinat_s_tiny_1k": "https://shi-labs.com/projects/dinat/checkpoints/imagenet1k/lowrank_dinat_s_tiny_in1k_224.pth",
+    "lowrank_dinat_s_small_1k": "https://shi-labs.com/projects/dinat/checkpoints/imagenet1k/lowrank_dinat_s_small_in1k_224.pth",
+    "lowrank_dinat_s_base_1k": "https://shi-labs.com/projects/dinat/checkpoints/imagenet1k/lowrank_dinat_s_base_in1k_224.pth",
+    "lowrank_dinat_s_large_1k": "https://shi-labs.com/projects/dinat/checkpoints/imagenet1k/lowrank_dinat_s_large_in1k_224.pth",
+    "lowrank_dinat_s_large_1k_384": "https://shi-labs.com/projects/dinat/checkpoints/imagenet1k/lowrank_dinat_s_large_in1k_384.pth",
+    # ImageNet-22K
+    "lowrank_dinat_s_large_21k": "https://shi-labs.com/projects/dinat/checkpoints/imagenet22k/lowrank_dinat_s_large_in22k_224.pth",
 }
 
 
 
-
-def window_partition(x, window_size):
-    """
-    Args:
-        x: (B, H, W, C)
-        window_size (int): window size
-
-    Returns:
-        windows: (num_windows*B, window_size, window_size, C)
-    """
-    B, H, W, C = x.shape
-    x = x.view(B, H // window_size, W // window_size, window_size, window_size, C)
-    windows = (
-        x.permute(0, 1, 3, 2, 4, 5)
-        .contiguous()
-        .view(B, H // window_size, W // window_size, -1, C)
-    )
-    return windows
-
-
-def window_reverse(windows, window_size, H, W):
-    """
-    Args:
-        windows: (B, num_windows, num_windows, window_size, window_size, C)
-        window_size (int): Window size
-        H (int): Height of image
-        W (int): Width of image
-
-    Returns:
-        x: (B, H, W, C)
-    """
-
-    B = windows.shape[0]  # / (H * W / window_size / window_size))
-    H = windows.shape[1] * window_size
-    W = windows.shape[2] * window_size
-
-    x = windows.view(
-        B, H // window_size, W // window_size, window_size, window_size, -1
-    )
-    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
-    return x
-
-
-class Mlp(nn.Module):
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        drop=0.0,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
-
-
-class WinToMeNeighborhoodAttention2D(nn.Module):
+class NeighborhoodAttention2D(nn.Module):
     """
     Neighborhood Attention 2D Module
     """
@@ -120,6 +40,7 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         kernel_size,
         dilation=1,
         bias=True,
+        low_rank=4,
         qkv_bias=True,
         qk_scale=None,
         attn_drop=0.0,
@@ -128,6 +49,7 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = dim // self.num_heads
+        self.low_rank = low_rank
         self.scale = qk_scale or self.head_dim**-0.5
         assert (
             kernel_size > 1 and kernel_size % 2 == 1
@@ -139,7 +61,10 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         self.dilation = dilation or 1
         self.window_size = self.kernel_size * self.dilation
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        # self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.q = nn.Linear(dim, num_heads * low_rank, bias=qkv_bias)
+        self.k = nn.Linear(dim, num_heads * low_rank, bias=qkv_bias)
+        self.v = nn.Linear(dim, dim, bias=qkv_bias)
         if bias:
             self.rpb = nn.Parameter(
                 torch.zeros(num_heads, (2 * kernel_size - 1), (2 * kernel_size - 1))
@@ -151,7 +76,7 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, return_keys=False):
+    def forward(self, x):
         B, Hp, Wp, C = x.shape
         H, W = int(Hp), int(Wp)
         pad_l = pad_t = pad_r = pad_b = 0
@@ -161,12 +86,17 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
             pad_b = max(0, self.window_size - H)
             x = pad(x, (0, 0, pad_l, pad_r, pad_t, pad_b))
             _, H, W, _ = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(B, H, W, 3, self.num_heads, self.head_dim)
-            .permute(3, 0, 4, 1, 2, 5)
-        )
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        # qkv = (
+        #     self.qkv(x)
+        #     .reshape(B, H, W, 3, self.num_heads, self.head_dim)
+        #     .permute(3, 0, 4, 1, 2, 5) # (3, B, self.num_heads, H, W, self.head_dim)
+        # )
+        # q, k, v = qkv[0], qkv[1], qkv[2]
+        
+        q = self.q(x).reshape(B, self.num_heads, H, W, self.low_rank)
+        k = self.k(x).reshape(B, self.num_heads, H, W, self.low_rank)
+        v = self.v(x).reshape(B, self.num_heads, H, W, self.head_dim)
+        
         q = q * self.scale
         attn = natten2dqkrpb(q, k, self.rpb, self.kernel_size, self.dilation)
         attn = attn.softmax(dim=-1)
@@ -176,10 +106,6 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
         if pad_r or pad_b:
             x = x[:, :Hp, :Wp, :]
 
-        if return_keys:
-            if pad_r or pad_b:
-                k = k[..., :Hp, :Wp, :]
-            return self.proj_drop(self.proj(x)), k
         return self.proj_drop(self.proj(x))
 
     def extra_repr(self) -> str:
@@ -189,8 +115,7 @@ class WinToMeNeighborhoodAttention2D(nn.Module):
             + f"rel_pos_bias={self.rpb is not None}"
         )
 
-
-class WinToMeNATBlock(nn.Module):
+class NATransformerLayer(nn.Module):
     def __init__(
         self,
         dim,
@@ -205,7 +130,7 @@ class WinToMeNATBlock(nn.Module):
         drop_path=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
-        **kwargs,
+        **kwargs
     ):
         super().__init__()
         self.dim = dim
@@ -213,7 +138,7 @@ class WinToMeNATBlock(nn.Module):
         self.mlp_ratio = mlp_ratio
 
         self.norm1 = norm_layer(dim)
-        self.attn = WinToMeNeighborhoodAttention2D(
+        self.attn = NeighborhoodAttention2D(
             dim,
             kernel_size=kernel_size,
             dilation=dilation,
@@ -240,86 +165,6 @@ class WinToMeNATBlock(nn.Module):
         x = self.attn(x)
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-
-class WinToMeNATReductionBlock(nn.Module):
-    def __init__(
-        self,
-        dim,
-        num_heads,
-        kernel_size=7,
-        reduction_window_size=4,
-        dilation=1,
-        mlp_ratio=4.0,
-        qkv_bias=True,
-        qk_scale=None,
-        drop=0.0,
-        attn_drop=0.0,
-        drop_path=0.0,
-        act_layer=nn.GELU,
-        norm_layer=nn.LayerNorm,
-        **kwargs,
-    ):
-        super().__init__()
-        self.dim = dim
-        self.reduction_window_size = reduction_window_size
-        self.num_heads = num_heads
-        self.mlp_ratio = mlp_ratio
-
-        self.norm1 = norm_layer(dim)
-        self.attn = WinToMeNeighborhoodAttention2D(
-            dim,
-            kernel_size=kernel_size,
-            dilation=dilation,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
-            attn_drop=attn_drop,
-            proj_drop=drop,
-        )
-
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(
-            in_features=dim,
-            hidden_features=mlp_hidden_dim,
-            act_layer=act_layer,
-            drop=drop,
-        )
-        self.upsample_mlp = Mlp(
-            in_features=dim,
-            out_features=dim * 2,
-            hidden_features=mlp_hidden_dim,
-            act_layer=act_layer,
-            drop=drop,
-        )
-
-    def forward(self, x):
-        B, H, W, C = x.shape
-
-        shortcut = x
-        x = self.norm1(x)
-        x, k = self.attn(x, return_keys=True)
-        x = shortcut + self.drop_path(x)
-        windowed_x = window_partition(x, window_size=self.reduction_window_size)
-        windowed_k = window_partition(
-            k.mean(dim=1), window_size=self.reduction_window_size
-        )
-        reduction_factor = 3 * self.reduction_window_size**2 // 4
-        m, u = windowed_unequal_bipartite_soft_matching(windowed_k, r=reduction_factor)
-        merged_x = m(windowed_x)
-
-        x = window_reverse(
-            merged_x,
-            window_size=self.reduction_window_size // 2,
-            H=H // 2,
-            W=W // 2,
-        )
-
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        x = self.upsample_mlp(x)
         return x
 
 
@@ -357,7 +202,7 @@ class PatchMerging(nn.Module):
         return x
 
 
-class WinToMeBasicLayer(nn.Module):
+class BasicLayer(nn.Module):
     """
     Based on Swin Transformer
     https://arxiv.org/abs/2103.14030
@@ -380,82 +225,44 @@ class WinToMeBasicLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         downsample=None,
     ):
+
         super().__init__()
         self.dim = dim
         self.depth = depth
 
-        # patch merging layer
-        self.downsample = downsample
-        self.downsampler = None
-        if downsample is not None:
-            if downsample == "patchmerge":
-                self.downsampler = PatchMerging(dim=dim, norm_layer=norm_layer)
-
         # build blocks
-        blocks_list = [
-            WinToMeNATBlock(
-                dim=dim,
-                num_heads=num_heads,
-                kernel_size=kernel_size,
-                dilation=1 if dilations is None else dilations[i],
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                drop=drop,
-                attn_drop=attn_drop,
-                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                norm_layer=norm_layer,
-            )
-            for i in range(depth - 1)
-        ]
-
-        if self.downsample == "tome":
-            blocks_list.append(
-                WinToMeNATReductionBlock(
+        self.blocks = nn.ModuleList(
+            [
+                NATransformerLayer(
                     dim=dim,
                     num_heads=num_heads,
                     kernel_size=kernel_size,
-                    reduction_window_size=4,
-                    dilation=1 if dilations is None else dilations[depth - 1],
+                    dilation=1 if dilations is None else dilations[i],
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
                     qk_scale=qk_scale,
                     drop=drop,
                     attn_drop=attn_drop,
-                    drop_path=drop_path[depth - 1]
+                    drop_path=drop_path[i]
                     if isinstance(drop_path, list)
                     else drop_path,
                     norm_layer=norm_layer,
                 )
-            )
+                for i in range(depth)
+            ]
+        )
 
+        # patch merging layer
+        if downsample is not None:
+            self.downsample = downsample(dim=dim, norm_layer=norm_layer)
         else:
-            blocks_list.append(
-                WinToMeNATBlock(
-                    dim=dim,
-                    num_heads=num_heads,
-                    kernel_size=kernel_size,
-                    dilation=1 if dilations is None else dilations[depth - 1],
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    qk_scale=qk_scale,
-                    drop=drop,
-                    attn_drop=attn_drop,
-                    drop_path=drop_path[depth - 1]
-                    if isinstance(drop_path, list)
-                    else drop_path,
-                    norm_layer=norm_layer,
-                )
-            )
-
-        self.blocks = nn.ModuleList(blocks_list)
+            self.downsample = None
 
     def forward(self, x):
-        for idx, blk in enumerate(self.blocks):
+        for blk in self.blocks:
             x = blk(x)
-
-        if self.downsampler is not None:
-            x = self.downsampler(x)
+        if self.downsample is not None:
+            x = self.downsample(x)
         return x
 
 
@@ -492,7 +299,7 @@ class PatchEmbed(nn.Module):
         return x
 
 
-class WinToMeDiNAT_s(nn.Module):
+class lowrank_DiNAT_s(nn.Module):
     def __init__(
         self,
         patch_size=4,
@@ -511,7 +318,7 @@ class WinToMeDiNAT_s(nn.Module):
         drop_path_rate=0.2,
         norm_layer=nn.LayerNorm,
         patch_norm=True,
-        **kwargs,
+        **kwargs
     ):
         super().__init__()
 
@@ -540,14 +347,7 @@ class WinToMeDiNAT_s(nn.Module):
         # build layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            if i_layer < self.num_layers - 2:
-                downsample_method = "tome"
-            elif i_layer == self.num_layers - 2:
-                downsample_method = "patchmerge"
-            else:
-                downsample_method = None
-            # print(f"{i_layer}'s downsample_method: {downsample_method}")
-            layer = WinToMeBasicLayer(
+            layer = BasicLayer(
                 dim=int(embed_dim * 2**i_layer),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
@@ -560,10 +360,8 @@ class WinToMeDiNAT_s(nn.Module):
                 attn_drop=attn_drop_rate,
                 drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                 norm_layer=norm_layer,
-                downsample=downsample_method,
+                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
             )
-            # print(f"LAYER NUMBER {i_layer}")
-            # print(f"\t{layer.blocks[depths[i_layer] - 1].mlp}")
             self.layers.append(layer)
 
         self.norm = norm_layer(self.num_features)
@@ -592,7 +390,7 @@ class WinToMeDiNAT_s(nn.Module):
         x = self.patch_embed(x)
         x = self.pos_drop(x)
 
-        for idx, layer in enumerate(self.layers):
+        for layer in self.layers:
             x = layer(x)
 
         x = self.norm(x).flatten(1, 2)
@@ -606,127 +404,9 @@ class WinToMeDiNAT_s(nn.Module):
         return x
 
 
-# ==================== WinToMeNAT-S s ======================================== #
 @register_model
-def wintome_nat_s_tiny(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 24],
-        embed_dim=96,
-        mlp_ratio=4,
-        drop_path_rate=0.2,
-        kernel_size=7,
-        dilations=None,
-        **kwargs,
-    )
-    if pretrained:
-        url = model_urls["wintome_nat_s_tiny_1k"]
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
-        model.load_state_dict(checkpoint)
-    return model
-
-
-@register_model
-def wintome_nat_s_small(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
-        depths=[2, 2, 18, 2],
-        num_heads=[3, 6, 12, 24],
-        embed_dim=96,
-        mlp_ratio=4,
-        drop_path_rate=0.3,
-        kernel_size=7,
-        dilations=None,
-        **kwargs,
-    )
-    if pretrained:
-        url = model_urls["wintome_nat_s_small_1k"]
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
-        model.load_state_dict(checkpoint)
-    return model
-
-
-@register_model
-def wintome_nat_s_base(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
-        depths=[2, 2, 18, 2],
-        num_heads=[4, 8, 16, 32],
-        embed_dim=128,
-        mlp_ratio=4,
-        drop_path_rate=0.5,
-        kernel_size=7,
-        dilations=None,
-        **kwargs,
-    )
-    if pretrained:
-        url = model_urls["wintome_nat_s_base_1k"]
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
-        model.load_state_dict(checkpoint)
-    return model
-
-
-@register_model
-def wintome_nat_s_large(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
-        depths=[2, 2, 18, 2],
-        num_heads=[4, 8, 16, 32],
-        embed_dim=192,
-        mlp_ratio=4,
-        drop_path_rate=0.35,
-        kernel_size=7,
-        dilations=None,
-        **kwargs,
-    )
-    if pretrained:
-        url = model_urls["wintome_nat_s_large_1k"]
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
-        model.load_state_dict(checkpoint)
-    return model
-
-
-@register_model
-def wintome_nat_s_large_384(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
-        depths=[2, 2, 18, 2],
-        num_heads=[4, 8, 16, 32],
-        embed_dim=192,
-        mlp_ratio=4,
-        drop_path_rate=0.35,
-        kernel_size=7,
-        dilations=None,
-        **kwargs,
-    )
-    if pretrained:
-        url = model_urls["wintome_nat_s_large_1k_384"]
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
-        model.load_state_dict(checkpoint)
-    return model
-
-
-@register_model
-def wintome_nat_s_large_21k(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
-        depths=[2, 2, 18, 2],
-        num_heads=[4, 8, 16, 32],
-        embed_dim=192,
-        mlp_ratio=4,
-        drop_path_rate=0.2,
-        kernel_size=7,
-        dilations=None,
-        **kwargs,
-    )
-    if pretrained:
-        url = model_urls["wintome_nat_s_large_21k"]
-        checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
-        model.load_state_dict(checkpoint)
-    return model
-
-
-# ==================== WinToMeDiNAT-S s ====================================== #
-
-
-@register_model
-def wintome_dinat_s_tiny(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
+def lowrank_dinat_s_tiny(pretrained=False, **kwargs):
+    model = lowrank_DiNAT_s(
         depths=[2, 2, 6, 2],
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
@@ -739,18 +419,18 @@ def wintome_dinat_s_tiny(pretrained=False, **kwargs):
             [1, 2, 1, 2, 1, 2],
             [1, 1],
         ],
-        **kwargs,
+        **kwargs
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_tiny_1k"]
+        url = model_urls["lowrank_dinat_s_tiny_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_small(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
+def lowrank_dinat_s_small(pretrained=False, **kwargs):
+    model = lowrank_DiNAT_s(
         depths=[2, 2, 18, 2],
         num_heads=[3, 6, 12, 24],
         embed_dim=96,
@@ -763,18 +443,18 @@ def wintome_dinat_s_small(pretrained=False, **kwargs):
             [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
             [1, 1],
         ],
-        **kwargs,
+        **kwargs
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_small_1k"]
+        url = model_urls["lowrank_dinat_s_small_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_base(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
+def lowrank_dinat_s_base(pretrained=False, **kwargs):
+    model = lowrank_DiNAT_s(
         depths=[2, 2, 18, 2],
         num_heads=[4, 8, 16, 32],
         embed_dim=128,
@@ -787,18 +467,18 @@ def wintome_dinat_s_base(pretrained=False, **kwargs):
             [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
             [1, 1],
         ],
-        **kwargs,
+        **kwargs
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_base_1k"]
+        url = model_urls["lowrank_dinat_s_base_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_large(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
+def lowrank_dinat_s_large(pretrained=False, **kwargs):
+    model = lowrank_DiNAT_s(
         depths=[2, 2, 18, 2],
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
@@ -811,18 +491,18 @@ def wintome_dinat_s_large(pretrained=False, **kwargs):
             [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
             [1, 1],
         ],
-        **kwargs,
+        **kwargs
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_large_1k"]
+        url = model_urls["lowrank_dinat_s_large_1k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_large_384(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
+def lowrank_dinat_s_large_384(pretrained=False, **kwargs):
+    model = lowrank_DiNAT_s(
         depths=[2, 2, 18, 2],
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
@@ -835,18 +515,18 @@ def wintome_dinat_s_large_384(pretrained=False, **kwargs):
             [1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3, 1, 3],
             [1, 1],
         ],
-        **kwargs,
+        **kwargs
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_large_1k_384"]
+        url = model_urls["lowrank_dinat_s_large_1k_384"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
 
 
 @register_model
-def wintome_dinat_s_large_21k(pretrained=False, **kwargs):
-    model = WinToMeDiNAT_s(
+def lowrank_dinat_s_large_21k(pretrained=False, **kwargs):
+    model = lowrank_DiNAT_s(
         depths=[2, 2, 18, 2],
         num_heads=[4, 8, 16, 32],
         embed_dim=192,
@@ -859,10 +539,10 @@ def wintome_dinat_s_large_21k(pretrained=False, **kwargs):
             [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
             [1, 1],
         ],
-        **kwargs,
+        **kwargs
     )
     if pretrained:
-        url = model_urls["wintome_dinat_s_large_21k"]
+        url = model_urls["lowrank_dinat_s_large_21k"]
         checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu")
         model.load_state_dict(checkpoint)
     return model
