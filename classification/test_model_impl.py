@@ -9,8 +9,11 @@ from torchsummary import summary
 # )
 
 
-from smooth_wintome_dinats import smooth_wintome_dinat_s_tiny
-
+from smooth_wintome_dinats import (
+    smooth_wintome_dinat_s_tiny,
+    smooth_wintome_dinat_s_no_rpb_tiny,
+)
+from dinats_no_rpb import *
 # from wintome_dinats import (
 #     wintome_nat_s_tiny,
 #     wintome_nat_s_small,
@@ -33,34 +36,36 @@ from extras import get_gflops, get_mparams
 
 
 model_clss = [
-    smooth_wintome_dinat_s_tiny,
-#     wintome_nat_s_tiny,
-#     # dinat_s_tiny,
-#     wintome_nat_s_small,
-#     wintome_nat_s_base,
-#     wintome_nat_s_large,
-#     wintome_nat_s_large_21k,
-#     wintome_nat_s_large_384,
-#     wintome_dinat_s_tiny,
-#     wintome_dinat_s_small,
-#     wintome_dinat_s_base,
-#     wintome_dinat_s_large,
-#     wintome_dinat_s_large_21k,
-#     wintome_dinat_s_large_384,
-#     dinat_s_large_384
+    dinat_s_tiny,
+    dinat_s_no_rpb_tiny,
+    #     wintome_nat_s_tiny,
+    #     # dinat_s_tiny,
+    #     wintome_nat_s_small,
+    #     wintome_nat_s_base,
+    #     wintome_nat_s_large,
+    #     wintome_nat_s_large_21k,
+    #     wintome_nat_s_large_384,
+    #     wintome_dinat_s_tiny,
+    #     wintome_dinat_s_small,
+    #     wintome_dinat_s_base,
+    #     wintome_dinat_s_large,
+    #     wintome_dinat_s_large_21k,
+    #     wintome_dinat_s_large_384,
+    #     dinat_s_large_384
 ]
 
 
 for model_cls in model_clss:
     print(model_cls.__name__)
     model = model_cls()
-    
-    # print(model)
-    print(model(torch.rand(2, 3, 224, 224)).shape)
-    # break
 
-    # summary(model, input_data=(3, 224, 224), device="cuda:0")
-    # print(f"WinTomeNAT flops: ", get_gflops(model, device="cuda:0"))
+    # # print(model)
+    # print(model(torch.rand(2, 3, 224, 224)).shape)
+    # # break
+
+    summary(model, input_data=(3, 224, 224), device="cuda:0")
+    print("Params:", sum(p.numel() for p in model.parameters()))
+    # print(f"flops: ", get_gflops(model, device="cuda:0"))
     # print(f"WinTomeNAT params: ", get_mparams(model, device="cuda:0"))
     # print("=" * 80)
     # break
@@ -69,5 +74,5 @@ for model_cls in model_clss:
 # # print(model(torch.rand(2, 3, 224, 224)).shape)
 # summary(model, input_data=(3, 224, 224), device="cuda:0")
 
-# print(f"NAT flops: ", get_gflops(model, device="cuda:0"))
+# print(f"flops: ", get_gflops(model, device="cuda:0"))
 # print(f"NAT params: ", get_mparams(model, device="cuda:0"))
