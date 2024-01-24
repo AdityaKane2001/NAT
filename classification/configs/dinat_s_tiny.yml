@@ -9,4 +9,8 @@ amp: True
 batch_size: 128
 sched: cosine
 sched_epochwise: False
+sched_on_updates: True
 weight_decay: 5e-2
+log_wandb: True
+project: eff-vit-in1k
+output: /workspace/akane/runs

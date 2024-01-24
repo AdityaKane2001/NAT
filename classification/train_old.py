@@ -41,7 +41,7 @@ from timm.utils import ApexScaler, NativeScaler
 
 ##### Model imports
 
-from dinats import *
+from dinats_trf import *
 
 ###################
 
