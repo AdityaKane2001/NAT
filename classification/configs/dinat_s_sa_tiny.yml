@@ -1,0 +1,16 @@
+model: dinat_s_sa_tiny
+lr: 1e-3
+warmup_lr: 1e-6
+min_lr: 5e-6
+epochs: 300
+cooldown_epochs: 10
+warmup_epochs: 20
+amp: True
+batch_size: 16
+sched: cosine
+sched_epochwise: False
+sched_on_updates: True
+weight_decay: 5e-2
+log_wandb: True
+project: eff-vit-in1k
+output: /workspace/akane/runs
