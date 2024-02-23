@@ -23,6 +23,7 @@ from mmdet.utils import collect_env, get_root_logger
 from nat import *
 from dinat import *
 from dinats import *
+from localglobal_dinats import *
 
 
 def parse_args():
@@ -74,7 +75,7 @@ def parse_args():
         choices=['none', 'pytorch', 'slurm', 'mpi'],
         default='none',
         help='job launcher')
-    parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--local-rank', type=int, default=0)
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -127,6 +128,7 @@ def main():
         init_dist(args.launcher, **cfg.dist_params)
         # re-set gpu_ids with distributed training mode
         _, world_size = get_dist_info()
+        cfg.device = "cuda"
         cfg.gpu_ids = range(world_size)
 
     # create work_dir
